@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Třídní sociometrie – Lokální sociometricko-ratingový nástroj</title>
+  <meta name="description" content="Otevřená klientská webová aplikace pro školní psychology: sociometricko-ratingové hodnocení vlivu a sympatií, analýza klimatu třídy a interaktivní sociogramy. 100 % lokálně v prohlížeči." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Horní lišta -->
+    <header class="topbar no-print">
+      <div class="topbar-left">
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">◎</span>
+          <div>
+            <h1 class="brand-title">Třídní sociometrie</h1>
+            <p class="brand-subtitle">Sociometricko-ratingový nástroj pro školní praxi</p>
+          </div>
+        </div>
+        <span class="privacy-badge" title="Veškeré výpočty probíhají pouze ve vašem prohlížeči. Žádná data žáků se nikam neodesílají.">
+          🔒 100 % lokálně (bez serveru)
+        </span>
+      </div>
+
+      <div class="topbar-actions">
+        <label class="toggle-chip" title="Přepne zobrazení jmen žáků na anonymní kódy (Ž01, Ž02…) v celé aplikaci i v tiskovém reportu.">
+          <input type="checkbox" id="toggle-anonymous" />
+          <span>Anonymní režim</span>
+        </label>
+
+        <button class="btn btn-secondary btn-sm" id="btn-load-sample" title="Načte syntetickou třídu 8.B (14 žáků) pro vyzkoušení">
+          Ukázková třída
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-open-file">
+          Načíst soubor
+        </button>
+        <button class="btn btn-primary btn-sm" id="btn-open-save-modal">
+          Uložit / Export
+        </button>
+        <input type="file" id="hidden-file-input" accept=".json,.socioenc,.csv" hidden />
+      </div>
+    </header>
+
+    <!-- Navigační záložky -->
+    <nav class="main-nav no-print" role="tablist" aria-label="Sekce aplikace">
+      <button class="nav-tab active" data-tab="class" role="tab" aria-selected="true">
+        1. Třída a žáci <span class="tab-badge" id="badge-students">0</span>
+      </button>
+      <button class="nav-tab" data-tab="matrix" role="tab" aria-selected="false">
+        2. Zadávání dat <span class="tab-badge" id="badge-completeness">0 %</span>
+      </button>
+      <button class="nav-tab" data-tab="overview" role="tab" aria-selected="false">
+        3. Výsledky a analýza
+      </button>
+      <button class="nav-tab" data-tab="sociogram" role="tab" aria-selected="false">
+        4. Grafy a sociogram
+      </button>
+      <button class="nav-tab" data-tab="report" role="tab" aria-selected="false">
+        5. Tisk / PDF report
+      </button>
+
+      <div class="nav-spacer"></div>
+      <div class="nav-class-pill" id="nav-class-pill">Nová třída</div>
+    </nav>
+
+    <!-- Hlavní obsah -->
+    <main class="main-content">
+      <!-- ZÁLOŽKA 1: TŘÍDA A ŽÁCI -->
+      <section class="tab-panel active" id="panel-class">
+        <div class="grid-two-col">
+          <!-- Metadata třídy -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Údaje o šetření</h2>
+              <button class="btn btn-ghost btn-sm text-danger" id="btn-reset-project">
+                Nová prázdná třída
+              </button>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="meta-class-name">Název třídy</label>
+                <input type="text" id="meta-class-name" placeholder="např. 8.B" />
+              </div>
+              <div class="form-field">
+                <label for="meta-date">Datum šetření</label>
+                <input type="date" id="meta-date" />
+              </div>
+              <div class="form-field form-field-full">
+                <label for="meta-school">Škola / pracoviště (volitelné)</label>
+                <input type="text" id="meta-school" placeholder="např. ZŠ Komenského" />
+              </div>
+              <div class="form-field form-field-full">
+                <label for="meta-note">Poznámka psychologa k administraci</label>
+                <textarea id="meta-note" rows="3" placeholder="Okolnosti šetření, nepřítomní žáci, důvod zadání…"></textarea>
+              </div>
+            </div>
+
+            <div class="info-box mt-16">
+              <strong>Použitá hodnoticí škála (1–5):</strong>
+              <ul class="compact-list">
+                <li><strong>Vliv:</strong> <code>1</code> = velmi velký vliv, <code>3</code> = průměrný, <code>5</code> = žádný vliv</li>
+                <li><strong>Sympatie:</strong> <code>1</code> = velmi sympatický/á, <code>3</code> = neutrální, <code>5</code> = nesympatický/á</li>
+              </ul>
+              <p class="muted-small">
+                <em>Poznámka:</em> Aplikace je otevřený sociometricko-ratingový nástroj. Neobsahuje licencované testové normy ani texty komerční metody SORAD (Hogrefe – Testcentrum).
+              </p>
+            </div>
+          </div>
+
+          <!-- Správa žáků -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Seznam žáků (<span id="student-count-label">0</span>)</h2>
+              <button class="btn btn-secondary btn-sm" id="btn-toggle-bulk">
+                Hromadné vložení
+              </button>
+            </div>
+
+            <!-- Přidání jednoho žáka -->
+            <form id="form-add-student" class="inline-form">
+              <input type="text" id="input-student-name" placeholder="Jméno nebo přezdívka (např. Anna Nováková)" required />
+              <select id="input-student-gender" title="Pohlaví (volitelné pro tvary v sociogramu)">
+                <option value="O">Neuvedeno</option>
+                <option value="F">Dívka (○)</option>
+                <option value="M">Chlapec (□)</option>
+              </select>
+              <button type="submit" class="btn btn-primary">Přidat</button>
+            </form>
+
+            <!-- Hromadné vložení -->
+            <div id="bulk-add-box" class="bulk-box hidden">
+              <label for="bulk-names-textarea">Vložte jména žáků (každý žák na samostatný řádek):</label>
+              <textarea id="bulk-names-textarea" rows="5" placeholder="Klára Novotná&#10;Jakub Dvořák&#10;Tereza Svobodová"></textarea>
+              <div class="row-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-bulk-confirm">Vložit seznam</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-bulk-cancel">Zrušit</button>
+              </div>
+            </div>
+
+            <!-- Tabulka žáků -->
+            <div class="table-wrap mt-12">
+              <table class="data-table" id="students-table">
+                <thead>
+                  <tr>
+                    <th style="width: 70px;">Kód</th>
+                    <th>Jméno / označení</th>
+                    <th style="width: 115px;">Pohlaví</th>
+                    <th style="width: 90px;" class="text-right">Akce</th>
+                  </tr>
+                </thead>
+                <tbody id="students-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZÁLOŽKA 2: ZADÁVÁNÍ DAT -->
+      <section class="tab-panel" id="panel-matrix">
+        <div class="card">
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Režim zadávání">
+              <button class="seg-btn active" data-entry-mode="sheet">Rychlý přepis po archu žáka</button>
+              <button class="seg-btn" data-entry-mode="matrix-influence">Matice vlivu (1–5)</button>
+              <button class="seg-btn" data-entry-mode="matrix-sympathy">Matice sympatií (1–5)</button>
+            </div>
+
+            <div class="toolbar-right">
+              <button class="btn btn-secondary btn-sm" id="btn-csv-import-inf" title="Importovat matici vlivu z CSV">
+                Import CSV (vliv)
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-csv-import-sym" title="Importovat matici sympatií z CSV">
+                Import CSV (sympatie)
+              </button>
+              <input type="file" id="hidden-csv-input" accept=".csv,.txt" hidden />
+            </div>
+          </div>
+
+          <div class="completeness-bar-wrap" id="completeness-summary"></div>
+
+          <!-- Režim A: Rychlý přepis po archu hodnotitele -->
+          <div id="entry-sheet-view">
+            <div class="sheet-controls">
+              <div class="sheet-selector">
+                <label for="select-rater">Hodnotící žák (arch):</label>
+                <button class="btn btn-secondary btn-sm" id="btn-prev-rater" title="Předchozí žák">←</button>
+                <select id="select-rater"></select>
+                <button class="btn btn-secondary btn-sm" id="btn-next-rater" title="Další žák">→</button>
+              </div>
+              <div class="hint-pill">
+                💡 Tip: Zadejte číslo <strong>1–5</strong> na klávesnici – kurzor automaticky přeskočí na další pole.
+              </div>
+            </div>
+
+            <div class="table-wrap mt-12">
+              <table class="data-table entry-sheet-table">
+                <thead>
+                  <tr>
+                    <th style="width: 75px;">Kód</th>
+                    <th style="width: 220px;">Hodnocený spolužák</th>
+                    <th style="width: 130px;">Vliv (1–5)</th>
+                    <th style="width: 130px;">Sympatie (1–5)</th>
+                    <th>Slovní komentář / zdůvodnění (volitelné)</th>
+                  </tr>
+                </thead>
+                <tbody id="sheet-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Režim B: Matice každý s každým -->
+          <div id="entry-matrix-view" class="hidden">
+            <div class="matrix-legend">
+              <span class="muted-small">Řádek = hodnotitel, Sloupec = hodnocený spolužák. Pohyb šipkami nebo zadáním čísel 1–5.</span>
+              <div class="score-pills">
+                <span class="score-pill s1">1 (nejvyšší)</span>
+                <span class="score-pill s2">2</span>
+                <span class="score-pill s3">3</span>
+                <span class="score-pill s4">4</span>
+                <span class="score-pill s5">5 (nejnižší)</span>
+              </div>
+            </div>
+            <div class="matrix-scroll-wrap mt-12" id="matrix-grid-container"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZÁLOŽKA 3: VÝSLEDKY A ANALÝZA -->
+      <section class="tab-panel" id="panel-overview">
+        <!-- Nastavení výpočtu -->
+        <div class="card card-compact mb-16">
+          <div class="toolbar">
+            <div class="toolbar-group">
+              <label for="opt-threshold-mode">Hranice kvadrantů:</label>
+              <select id="opt-threshold-mode">
+                <option value="fixed">Pevný střed škály (3,00)</option>
+                <option value="mean">Průměr třídy (relativní pozice)</option>
+              </select>
+            </div>
+            <div class="toolbar-group">
+              <label for="opt-sympathy-max">Vzájemná sympatie:</label>
+              <select id="opt-sympathy-max">
+                <option value="2">Oboustranně 1 nebo 2</option>
+                <option value="1">Pouze oboustranně 1 (velmi silná)</option>
+              </select>
+            </div>
+            <div class="toolbar-group">
+              <label for="opt-antipathy-min">Vzájemná antipatie:</label>
+              <select id="opt-antipathy-min">
+                <option value="4">Oboustranně 4 nebo 5</option>
+                <option value="5">Pouze oboustranně 5 (silná)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI karty -->
+        <div class="kpi-grid" id="kpi-grid"></div>
+
+        <!-- Slovní shrnutí klimatu a detekované podskupiny -->
+        <div class="grid-two-col mt-16">
+          <div class="card">
+            <div class="card-header">
+              <h2>Interpretace klimatu třídy</h2>
+            </div>
+            <div id="climate-notes-box"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Podskupiny (kliky) a izolovaní žáci</h2>
+            </div>
+            <div id="cliques-box"></div>
+          </div>
+        </div>
+
+        <!-- Tabulka výsledků po žácích -->
+        <div class="card mt-16">
+          <div class="card-header">
+            <h2>Přehled všech žáků</h2>
+            <span class="muted-small">Kliknutím na řádek otevřete detailní kartu žáka včetně komentářů.</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table sortable-table" id="results-table">
+              <thead>
+                <tr>
+                  <th data-sort="code">Kód</th>
+                  <th data-sort="name">Žák</th>
+                  <th data-sort="influenceIndex" title="Nižší hodnota = vyšší vliv ve třídě">Index vlivu ↕</th>
+                  <th data-sort="sympathyIndex" title="Nižší hodnota = vyšší oblíbenost">Index obliby ↕</th>
+                  <th data-sort="posSympathyReceived" title="Počet přijatých sympatií (1–2)">Přijaté 1–2 ↕</th>
+                  <th data-sort="negSympathyReceived" title="Počet přijatých antipatií (4–5)">Přijaté 4–5 ↕</th>
+                  <th data-sort="mutualSymCount" title="Počet vzájemných sympatií">Vzáj. symp. ↕</th>
+                  <th data-sort="givenSympathyMean" title="Jak žák v průměru hodnotí ostatní (1 = velmi laskavě, 5 = přísně/odmítavě)">Rozdává (průměr) ↕</th>
+                  <th>Typologie / signály</th>
+                </tr>
+              </thead>
+              <tbody id="results-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZÁLOŽKA 4: GRAFY A SOCIOGRAM -->
+      <section class="tab-panel" id="panel-sociogram">
+        <div class="grid-charts">
+          <!-- 2D poziční graf -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2>Poziční graf: Vliv × Obliba</h2>
+                <p class="muted-small">Vpravo nahoře = největší vliv a nejvyšší obliba (známka 1). Kliknutím otevřete detail žáka.</p>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-export-scatter-svg">SVG</button>
+                <button class="btn btn-secondary btn-sm" id="btn-export-scatter-png">PNG</button>
+              </div>
+            </div>
+            <div class="viz-container" id="scatter-container"></div>
+          </div>
+
+          <!-- Interaktivní sociogram -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2>Interaktivní sociogram vztahů</h2>
+                <p class="muted-small">Kliknutím na žáka zvýrazníte jeho vazby. V silovém režimu lze uzly přetahovat myší.</p>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-export-socio-svg">SVG</button>
+                <button class="btn btn-secondary btn-sm" id="btn-export-socio-png">PNG</button>
+              </div>
+            </div>
+
+            <div class="socio-controls">
+              <div class="segmented segmented-sm">
+                <button class="seg-btn active" data-socio-layout="orbital">Orbitální (vliv)</button>
+                <button class="seg-btn" data-socio-layout="force">Silový (kliky)</button>
+              </div>
+
+              <label class="check-pill check-green">
+                <input type="checkbox" id="flt-mutual-sym" checked /> Vzáj. sympatie
+              </label>
+              <label class="check-pill check-teal">
+                <input type="checkbox" id="flt-uni-sym" /> Jednostr. sympatie
+              </label>
+              <label class="check-pill check-red">
+                <input type="checkbox" id="flt-mutual-anti" checked /> Vzáj. antipatie
+              </label>
+              <label class="check-pill check-orange">
+                <input type="checkbox" id="flt-uni-anti" /> Jednostr. antipatie
+              </label>
+              <button class="btn btn-ghost btn-sm" id="btn-clear-socio-focus" style="display:none;">
+                Zrušit výběr žáka
+              </button>
+            </div>
+
+            <div class="viz-container" id="sociogram-container"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZÁLOŽKA 5: TISKOVÝ / PDF REPORT -->
+      <section class="tab-panel" id="panel-report">
+        <div class="card no-print mb-16">
+          <div class="toolbar">
+            <div>
+              <strong>Náhled tiskové zprávy / PDF reportu</strong>
+              <p class="muted-small">Report automaticky respektuje zapnutý/vypnutý Anonymní režim z horní lišty.</p>
+            </div>
+            <div class="row-actions">
+              <label class="check-pill">
+                <input type="checkbox" id="rep-include-comments" checked /> Zahrnout slovní komentáře
+              </label>
+              <button class="btn btn-primary" id="btn-print-report">
+                🖨️ Tisknout / Uložit jako PDF
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <article class="report-sheet" id="report-sheet">
+          <!-- Vygenerováno dynamicky v app.js -->
+        </article>
+      </section>
+    </main>
+
+    <!-- Plovoucí tooltip pro grafy -->
+    <div id="chart-tooltip" class="chart-tooltip hidden"></div>
+
+    <!-- Modální okno: Detail žáka -->
+    <div id="modal-student" class="modal-backdrop hidden no-print" role="dialog" aria-modal="true">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2 id="modal-student-title">Detail žáka</h2>
+          <button class="btn-icon-close" id="btn-close-student-modal" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="modal-body" id="modal-student-body"></div>
+      </div>
+    </div>
+
+    <!-- Modální okno: Uložit / Exportovat -->
+    <div id="modal-save" class="modal-backdrop hidden no-print" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Uložit a exportovat data</h2>
+          <button class="btn-icon-close" id="btn-close-save-modal" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted-small mb-12">
+            Data zůstávají jen u vás. Pro archivaci citlivých údajů třídy doporučujeme <strong>zašifrovaný soubor (.socioenc)</strong> chráněný heslem.
+          </p>
+
+          <div class="export-option">
+            <h3>🔒 Zašifrovaný projekt (.socioenc – AES-256)</h3>
+            <p class="muted-small">Vhodné pro bezpečné uložení na disk nebo flashku. Bez hesla nelze soubor přečíst.</p>
+            <div class="inline-form mt-8">
+              <input type="password" id="input-encrypt-pass" placeholder="Zadejte heslo (min. 4 znaky)" />
+              <button class="btn btn-primary btn-sm" id="btn-export-encrypted">Stáhnout šifrovaně</button>
+            </div>
+          </div>
+
+          <div class="export-option">
+            <h3>📄 Nezašifrovaný projekt (.json)</h3>
+            <p class="muted-small">Kompletní projekt (žáci, matice, komentáře, závěr) pro rychlé opětovné otevření.</p>
+            <button class="btn btn-secondary btn-sm mt-8" id="btn-export-json">Stáhnout JSON</button>
+          </div>
+
+          <div class="export-option">
+            <h3>📊 Tabulky pro Excel (.csv)</h3>
+            <p class="muted-small">Export matic hodnocení (středník + UTF-8 BOM pro český Excel).</p>
+            <div class="row-actions mt-8">
+              <button class="btn btn-secondary btn-sm" id="btn-export-csv-inf">CSV – Matice vlivu</button>
+              <button class="btn btn-secondary btn-sm" id="btn-export-csv-sym">CSV – Matice sympatií</button>
+            </div>
+          </div>
+
+          <div class="export-option export-danger">
+            <h3>🧹 Vyčistit lokální paměť prohlížeče</h3>
+            <p class="muted-small">Okamžitě smaže automaticky uloženou rozpracovanou třídu z tohoto prohlížeče (užitečné na sdíleném školním PC).</p>
+            <button class="btn btn-danger btn-sm mt-8" id="btn-wipe-storage">Vymazat data z prohlížeče</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast notifikace -->
+    <div id="toast-container" class="toast-container no-print"></div>
+  </div>
+
+  <script defer src="js/engine.js"></script>
+  <script defer src="js/crypto.js"></script>
+  <script defer src="js/sampleData.js"></script>
+  <script defer src="js/charts.js"></script>
+  <script defer src="js/sociogram.js"></script>
+  <script defer src="js/app.js"></script>
+</body>
+</html>
